@@ -1,6 +1,23 @@
 "use client";
 
-import { CharDiff } from "@/lib/scoring";
+import { useEffect, useState } from "react";
+import { CharDiff, getStars } from "@/lib/scoring";
+
+/**
+ * Deterministic decorative waveform — 28 bar heights derived from a seed
+ * string. Pure (no Math.random), so it is stable across re-renders.
+ */
+function waveform(seed: string): number[] {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  }
+  return Array.from({ length: 28 }, (_, i) => {
+    h = Math.imul(h ^ (h >>> 15), 1 | (i + 1));
+    h ^= h >>> 13;
+    return ((h >>> 0) % 1000) / 1000 * 60 + 20;
+  });
+}
 
 interface VoiceMessageProps {
   type: "voice";
@@ -58,6 +75,7 @@ function VoiceBubble({
   onPlay,
   timestamp,
 }: VoiceMessageProps) {
+  const barHeights = waveform(timestamp);
   return (
     <div className="flex justify-end mb-3">
       <div className="bg-white rounded-2xl rounded-tl-sm shadow-sm px-3 py-2 max-w-[85%] min-w-[200px]">
@@ -77,14 +95,14 @@ function VoiceBubble({
             )}
           </button>
           <div className="flex-1 flex items-center gap-[2px] h-6">
-            {Array.from({ length: 28 }).map((_, i) => (
+            {barHeights.map((h, i) => (
               <div
                 key={i}
                 className={`w-[3px] rounded-full transition-all duration-150 ${
                   isPlaying ? "bg-[#00a884]" : "bg-gray-300"
                 }`}
                 style={{
-                  height: `${Math.random() * 60 + 20}%`,
+                  height: `${h}%`,
                   animationDelay: `${i * 50}ms`,
                 }}
               />
@@ -123,10 +141,33 @@ function CorrectionBubble({
   expectedText,
   timestamp,
 }: CorrectionMessageProps) {
+  const stars = getStars(score);
+  const passed = score >= PASS_THRESHOLD;
   return (
     <div className="flex justify-end mb-3">
-      <div className="bg-white rounded-2xl rounded-tl-sm shadow-sm px-3 py-2 max-w-[90%]">
+      <div
+        className={`bg-white rounded-2xl rounded-tl-sm shadow-sm px-3 py-2 max-w-[90%] animate-[pop-in_0.3s_ease-out] ${
+          passed ? "ring-2 ring-[#00a884]/25" : ""
+        }`}
+      >
         <div className="text-center mb-2">
+          <div className="flex justify-center gap-1 mb-1">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className={`text-lg ${
+                  i < stars
+                    ? "animate-[star-pop_0.35s_ease-out_both]"
+                    : "star-empty"
+                }`}
+                style={
+                  i < stars ? { animationDelay: `${i * 0.12}s` } : undefined
+                }
+              >
+                ⭐
+              </span>
+            ))}
+          </div>
           <span className="text-3xl">{emoji}</span>
           <div className="text-xl font-bold text-[#00a884] mt-1">
             {score}%
@@ -241,50 +282,94 @@ function GameOverBubble({
     correctRounds >= 4 ? "thrilled" : correctRounds >= 2 ? "semiHappy" : "sad";
   const { emoji, bg, border, title, scoreColor, glow } = tierConfig[tier];
 
+  const overallStars = getStars(averageScore);
+  const totalStars = roundScores.reduce((sum, s) => sum + getStars(s), 0);
+  const maxStars = totalRounds * 3;
+
+  // count up the collected-stars total for a little payoff
+  const [shownStars, setShownStars] = useState(0);
+  useEffect(() => {
+    if (totalStars <= 0) {
+      setShownStars(0);
+      return;
+    }
+    let n = 0;
+    const id = setInterval(() => {
+      n++;
+      setShownStars(n);
+      if (n >= totalStars) clearInterval(id);
+    }, 110);
+    return () => clearInterval(id);
+  }, [totalStars]);
+
   return (
     <div className="flex justify-center mb-3 px-2">
       <div
-        className={`bg-gradient-to-b ${bg} ${border} border rounded-2xl shadow-lg ${glow} px-5 py-5 max-w-[92%] w-full`}
+        className={`bg-gradient-to-b ${bg} ${border} border-2 rounded-3xl shadow-xl ${glow} px-5 py-5 max-w-[94%] w-full animate-[pop-in_0.4s_ease-out]`}
       >
-        <div className="text-center">
-          <div className="text-7xl mb-3 animate-bounce">{emoji}</div>
-          <div className={`text-3xl font-extrabold ${scoreColor}`} dir="rtl">
+        <div className="text-center" dir="rtl">
+          <span className="inline-block rounded-full bg-white/70 px-4 py-1 text-[11px] font-extrabold tracking-wide text-gray-500">
+            {tier === "sad" ? "סוף המשחק" : "🏁 כל הכבוד!"}
+          </span>
+        </div>
+
+        <div className="mt-3 flex items-end justify-center gap-2">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className={`${i === 1 ? "text-5xl" : "text-4xl"} ${
+                i < overallStars
+                  ? "animate-[star-pop_0.45s_ease-out_both]"
+                  : "star-empty"
+              }`}
+              style={
+                i < overallStars
+                  ? { animationDelay: `${i * 0.2}s` }
+                  : undefined
+              }
+            >
+              ⭐
+            </span>
+          ))}
+        </div>
+
+        <div className="mt-2 text-center" dir="rtl">
+          <div className={`text-3xl font-extrabold ${scoreColor}`}>
             {correctRounds} מתוך {totalRounds}
           </div>
-          <div className="text-sm text-gray-600 mt-1 font-medium" dir="rtl">
-            {title}
+          <div className="mt-0.5 text-sm font-medium text-gray-600">
+            {emoji} {title}
           </div>
         </div>
 
-        <div className="flex justify-center gap-2 mt-5" dir="rtl">
+        <div className="mt-4 flex justify-center gap-1.5" dir="rtl">
           {roundScores.map((score, i) => {
             const passed = score >= PASS_THRESHOLD;
             return (
-              <div key={i} className="flex flex-col items-center gap-1">
-                <div
-                  className={`w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                    passed
-                      ? "bg-green-100 text-green-700 border-green-400"
-                      : "bg-red-100 text-red-600 border-red-300"
-                  }`}
-                >
-                  {score}%
-                </div>
-                <span className="text-[10px] text-gray-400">
-                  {passed ? "✓" : "✗"}
-                </span>
+              <div
+                key={i}
+                className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-[11px] font-bold ${
+                  passed
+                    ? "border-green-400 bg-green-100 text-green-700"
+                    : "border-red-300 bg-red-100 text-red-600"
+                }`}
+              >
+                {score}%
               </div>
             );
           })}
         </div>
 
-        <div className="text-center mt-4">
-          <span className="inline-block bg-white/70 rounded-full px-4 py-1.5 text-sm font-bold text-gray-700">
-            ממוצע: {averageScore}%
+        <div className="mt-4 flex justify-center gap-2" dir="rtl">
+          <span className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-bold text-amber-600 shadow-sm">
+            ⭐ {shownStars}/{maxStars} כוכבים
+          </span>
+          <span className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-bold text-gray-700 shadow-sm">
+            ממוצע {averageScore}%
           </span>
         </div>
 
-        <div className="text-[11px] text-gray-400 text-center mt-3">
+        <div className="mt-3 text-center text-[11px] text-gray-400">
           {timestamp}
         </div>
       </div>
