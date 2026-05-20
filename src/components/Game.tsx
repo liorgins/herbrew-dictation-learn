@@ -4,8 +4,16 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import ChatBubble, { ChatBubbleProps } from "./ChatBubble";
 import ChatInput from "./ChatInput";
 import DifficultyPicker from "./DifficultyPicker";
+import IntroScreen from "./IntroScreen";
+import Confetti from "./Confetti";
 import { getRandomSentences, Sentence } from "@/lib/sentences";
 import { scoreAnswer, ScoringResult } from "@/lib/scoring";
+import {
+  playSound,
+  isSoundEnabled,
+  setSoundEnabled,
+  unlockAudio,
+} from "@/lib/sounds";
 
 type GamePhase = "idle" | "listening" | "typing" | "scored" | "gameOver";
 
@@ -53,6 +61,8 @@ export default function Game() {
   const [countdown, setCountdown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
+  const [confettiKey, setConfettiKey] = useState(0);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
@@ -72,6 +82,23 @@ export default function Game() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Sync the persisted sound preference once on the client (defaults to on).
+  useEffect(() => {
+    setSoundOn(isSoundEnabled());
+  }, []);
+
+  const toggleSound = useCallback(() => {
+    setSoundOn((prev) => {
+      const next = !prev;
+      setSoundEnabled(next);
+      if (next) {
+        unlockAudio();
+        playSound("tap");
+      }
+      return next;
+    });
+  }, []);
 
   const stopCurrentAudio = useCallback(() => {
     if (sourceNodeRef.current) {
@@ -224,9 +251,16 @@ export default function Game() {
     setMessages((prev) => [...prev, gameOverMsg]);
     setPhase("gameOver");
     scrollToBottom();
+
+    // The big finale — celebrate a good run with a fanfare + confetti.
+    if (correctCount >= 2) {
+      playSound("win");
+      setConfettiKey((k) => k + 1);
+    }
   }, [scrollToBottom]);
 
   const startGame = useCallback(() => {
+    unlockAudio();
     const sentences = getRandomSentences(TOTAL_ROUNDS, difficulty);
     sentenceQueueRef.current = sentences;
     roundScoresRef.current = [];
@@ -313,6 +347,7 @@ export default function Game() {
         setMessages((prev) => [...prev, correctionMsg]);
         roundScoresRef.current = [...roundScoresRef.current, result.score];
         setPhase("scored");
+        playSound(result.score >= PASS_THRESHOLD ? "correct" : "wrong");
         scrollToBottom();
       }, 600);
     },
@@ -387,6 +422,14 @@ export default function Game() {
             <div className="text-[10px] text-white/70">סיבוב</div>
           </div>
         )}
+        <button
+          onClick={toggleSound}
+          className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-lg flex-shrink-0 active:scale-90 transition-transform touch-manipulation"
+          aria-label={soundOn ? "כבה צלילי משחק" : "הפעל צלילי משחק"}
+          title={soundOn ? "צלילים פעילים" : "צלילים כבויים"}
+        >
+          {soundOn ? "🔊" : "🔇"}
+        </button>
       </header>
 
       <div className="bg-[#f0f2f5] px-3 py-2 border-b border-gray-200 flex-shrink-0">
@@ -403,19 +446,7 @@ export default function Game() {
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c8c4bc' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
         }}
       >
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-4 py-12">
-            <div className="text-6xl">🎧</div>
-            <div dir="rtl" className="space-y-2">
-              <h2 className="text-xl font-bold text-gray-700">ברוכים הבאים!</h2>
-              <p className="text-gray-500 text-sm max-w-[260px]">
-                לחצו על הכפתור למטה כדי להתחיל משחק.
-                <br />
-                בכל משחק {TOTAL_ROUNDS} סיבובים — הקשיבו, הקלידו וקבלו ציון!
-              </p>
-            </div>
-          </div>
-        )}
+        {messages.length === 0 && <IntroScreen totalRounds={TOTAL_ROUNDS} />}
 
         {messages.map((msg, i) => (
           <ChatBubble key={i} {...msg} />
@@ -483,6 +514,8 @@ export default function Game() {
           )}
         </div>
       )}
+
+      <Confetti fireKey={confettiKey} />
     </div>
   );
 }

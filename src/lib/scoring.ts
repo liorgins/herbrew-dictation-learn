@@ -125,6 +125,14 @@ function buildSpaceMap(original: string): Map<number, string> {
   return map;
 }
 
+/** Star rating (0–3) for a single round score. */
+export function getStars(score: number): 0 | 1 | 2 | 3 {
+  if (score >= 95) return 3;
+  if (score >= 80) return 2;
+  if (score >= 60) return 1;
+  return 0;
+}
+
 function getMessage(score: number): string {
   if (score >= 95) return "כמעט מושלם! עבודה מעולה!";
   if (score >= 80) return "יופי! רוב המילים נכונות!";
