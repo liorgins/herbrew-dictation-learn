@@ -26,7 +26,7 @@ export default function ChatInput({ onSend, disabled, placeholder }: ChatInputPr
   };
 
   return (
-    <div className="bg-[#f0f2f5] px-3 py-2 flex items-center gap-2">
+    <div className="bg-[#f0f2f5] px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center gap-2">
       <button
         onClick={handleSend}
         disabled={disabled || !text.trim()}

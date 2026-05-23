@@ -6,7 +6,8 @@ import ChatInput from "./ChatInput";
 import DifficultyPicker from "./DifficultyPicker";
 import IntroScreen from "./IntroScreen";
 import Confetti from "./Confetti";
-import { getRandomSentences, Sentence } from "@/lib/sentences";
+import { getFreshSentences, Sentence } from "@/lib/sentences";
+import { getSeenIds, markSeen } from "@/lib/progress";
 import { scoreAnswer, ScoringResult } from "@/lib/scoring";
 import {
   playSound,
@@ -82,6 +83,21 @@ export default function Game() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // When the soft keyboard opens or closes the visual viewport changes size.
+  // Re-pin to the bottom so the latest message (e.g. the play-voice bubble)
+  // stays right above the input instead of drifting off-screen.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      requestAnimationFrame(() => {
+        chatEndRef.current?.scrollIntoView({ block: "end" });
+      });
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
 
   // Sync the persisted sound preference once on the client (defaults to on).
   useEffect(() => {
@@ -261,7 +277,14 @@ export default function Game() {
 
   const startGame = useCallback(() => {
     unlockAudio();
-    const sentences = getRandomSentences(TOTAL_ROUNDS, difficulty);
+    // Prefer sentences the player hasn't seen yet; remember the ones served so
+    // the next game pulls fresh ones until this difficulty is exhausted.
+    const sentences = getFreshSentences(
+      TOTAL_ROUNDS,
+      difficulty,
+      getSeenIds()
+    );
+    markSeen(sentences.map((s) => s.id));
     sentenceQueueRef.current = sentences;
     roundScoresRef.current = [];
     setRound(0);
@@ -394,7 +417,7 @@ export default function Game() {
 
   return (
     <div className="flex flex-col h-[100dvh] max-w-md mx-auto bg-[#efeae2] shadow-2xl overflow-hidden relative">
-      <header className="bg-[#00a884] text-white px-4 py-3 flex items-center gap-3 flex-shrink-0 shadow-md z-10">
+      <header className="bg-[#00a884] text-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 flex items-center gap-3 flex-shrink-0 shadow-md z-10">
         <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl">
           📝
         </div>
@@ -463,7 +486,7 @@ export default function Game() {
       {phase === "typing" ? (
         <ChatInput onSend={handleSend} disabled={false} />
       ) : phase === "gameOver" ? (
-        <div className="bg-[#f0f2f5] px-3 py-3 flex justify-center gap-3" dir="rtl">
+        <div className="bg-[#f0f2f5] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex justify-center gap-3" dir="rtl">
           <button
             onClick={handlePlayAgain}
             className="bg-[#00a884] text-white px-6 py-2.5 rounded-full font-medium text-[15px] hover:bg-[#008f6f] transition-all active:scale-95 shadow-md flex items-center gap-2 touch-manipulation"
@@ -478,7 +501,7 @@ export default function Game() {
           </button>
         </div>
       ) : (
-        <div className="bg-[#f0f2f5] px-3 py-3 flex justify-center gap-3">
+        <div className="bg-[#f0f2f5] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex justify-center gap-3">
           {phase === "idle" && (
             <button
               onClick={startGame}
